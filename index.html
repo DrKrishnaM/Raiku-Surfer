@@ -6,22 +6,51 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <style>
     html,body{
-      height:100%;margin:0;overflow:hidden;background:#cbe7ff;
+      height:100%;margin:0;overflow:hidden;background:#222;
       font-family:Arial,Helvetica,sans-serif;
     }
-    canvas{display:block;width:100vw;height:100vh;}
-    #startScreen,#gameOverScreen{
-      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-      flex-direction:column;background:rgba(0,0,0,0.6);color:#fff;z-index:10;
+    canvas{
+      display:block;
+      width:100vw;
+      height:100vh;
+      background:#444;
     }
-    .hidden{display:none;}
+    #startScreen,#gameOverScreen{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      background:rgba(0,0,0,0.75);
+      color:#fff;
+      z-index:10;
+      transition:opacity 0.4s ease;
+    }
+    #startScreen.hidden,#gameOverScreen.hidden{
+      opacity:0;
+      pointer-events:none;
+      z-index:-1;
+    }
     button{
-      padding:10px 20px;font-size:16px;border:none;border-radius:8px;
-      background:#007bff;color:white;cursor:pointer;
+      padding:10px 20px;
+      font-size:16px;
+      border:none;
+      border-radius:8px;
+      background:#007bff;
+      color:white;
+      cursor:pointer;
+      margin-top:10px;
     }
     #hud{
-      position:absolute;top:10px;left:10px;color:#fff;font-weight:bold;
-      text-shadow:0 1px 2px rgba(0,0,0,0.7);z-index:5;
+      position:absolute;
+      top:10px;
+      left:10px;
+      color:#fff;
+      font-weight:bold;
+      text-shadow:0 1px 2px rgba(0,0,0,0.7);
+      z-index:5;
+      font-size:18px;
     }
   </style>
 </head>
@@ -38,12 +67,13 @@
     <button id="restartBtn">Restart</button>
   </div>
 
-  <div id="hud">Score: 0</div>
+  <div id="hud" style="display:none;">Score: 0</div>
   <canvas id="gameCanvas"></canvas>
 
   <script>
   const canvas=document.getElementById("gameCanvas");
   const ctx=canvas.getContext("2d");
+
   function resizeCanvas(){
     const dpr=window.devicePixelRatio||1;
     canvas.width=window.innerWidth*dpr;
@@ -53,18 +83,17 @@
   resizeCanvas();
   window.addEventListener("resize",resizeCanvas);
 
-  // Metrics
   let W=window.innerWidth,H=window.innerHeight;
   let LANE_W=W/3;
   let GROUND_Y=H-80;
 
-  // Player
   let player={
     lane:1,width:45,height:70,
     x:LANE_W*1+(LANE_W-45)/2,
     y:GROUND_Y-70,
     yVel:0,gravity:0.8,jumpPower:14,jumping:false,runFrame:0
   };
+
   const raiku=new Image();
   raiku.src='https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
 
@@ -78,7 +107,6 @@
     e.preventDefault();
     startX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
-    if(!gameStarted&&!gameOver)startGame();
   },{passive:false});
 
   canvas.addEventListener("touchend",e=>{
@@ -95,10 +123,10 @@
   });
 
   function drawBackground(){
-    // Road
     ctx.fillStyle="#444";
     ctx.fillRect(0,0,W,H);
-    // Lanes
+
+    // moving lane stripes
     ctx.strokeStyle="#fff";
     ctx.lineWidth=4;
     for(let i=1;i<3;i++){
@@ -110,9 +138,10 @@
         ctx.stroke();
       }
     }
-    // Roadside grass
+
+    // side grass
     ctx.fillStyle="#2e7d32";
-    ctx.fillRect(0,GROUND_Y, W, 80);
+    ctx.fillRect(0,GROUND_Y,W,80);
   }
 
   function drawPlayer(){
@@ -122,40 +151,25 @@
       ctx.fillStyle="red";
       ctx.fillRect(player.x,player.y,player.width,player.height);
     }
-
-    // simple leg motion when running
-    if(!player.jumping){
-      const ang=Math.sin(player.runFrame*0.25)*0.5;
-      ctx.strokeStyle="#000";
-      ctx.beginPath();
-      ctx.moveTo(player.x+12,player.y+player.height);
-      ctx.lineTo(player.x+12-6*Math.cos(ang),player.y+player.height+10*Math.sin(ang));
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(player.x+33,player.y+player.height);
-      ctx.lineTo(player.x+33+6*Math.cos(ang),player.y+player.height+10*Math.sin(ang));
-      ctx.stroke();
-    }
-    player.runFrame++;
   }
 
   function spawnObstacle(){
     const lane=Math.floor(Math.random()*3);
     const rand=Math.random();
-    if(rand<0.5){ // car
-      const carColors=["blue","red","black","green"];
-      const color=carColors[Math.floor(Math.random()*carColors.length)];
-      obstacles.push({type:"car",lane,x:LANE_W*lane+(LANE_W-60)/2,y:-30,width:60,height:30,color,speed:baseSpeed+score/300});
-    }else if(rand<0.8){ // barrier
-      const h=30+Math.random()*40;
-      obstacles.push({type:"barrier",lane,x:LANE_W*lane+(LANE_W-40)/2,y:-h,width:40,height:h,color:"orange",speed:baseSpeed+score/300});
-    }else{ // pole
-      obstacles.push({type:"pole",lane,x:LANE_W*lane+(LANE_W-20)/2,y:-60,width:20,height:60,color:"gray",speed:baseSpeed+score/300});
+    if(rand<0.5){
+      const colors=["blue","red","black","green"];
+      const color=colors[Math.floor(Math.random()*colors.length)];
+      obstacles.push({lane,x:LANE_W*lane+(LANE_W-60)/2,y:-30,width:60,height:30,color,speed:baseSpeed+score/300});
+    }else{
+      const h=40+Math.random()*30;
+      obstacles.push({lane,x:LANE_W*lane+(LANE_W-40)/2,y:-h,width:40,height:h,color:"orange",speed:baseSpeed+score/300});
     }
   }
 
   function startGame(){
     gameStarted=true;gameOver=false;score=0;obstacles=[];
+    player.lane=1;
+    player.x=LANE_W+(LANE_W-player.width)/2;
     document.getElementById("startScreen").classList.add("hidden");
     document.getElementById("gameOverScreen").classList.add("hidden");
     hud.style.display="block";
@@ -164,6 +178,8 @@
 
   function restartGame(){
     gameOver=false;gameStarted=true;score=0;obstacles=[];
+    player.lane=1;
+    player.x=LANE_W+(LANE_W-player.width)/2;
     document.getElementById("gameOverScreen").classList.add("hidden");
     hud.style.display="block";
     update();
@@ -174,7 +190,6 @@
     ctx.clearRect(0,0,W,H);
     drawBackground();
 
-    // Jump physics
     if(player.jumping){
       player.y+=player.yVel;
       player.yVel+=player.gravity;
@@ -184,22 +199,17 @@
       }
     }
 
-    // Player
     drawPlayer();
 
-    // Spawn obstacles
     spawnTimer++;
-    if(spawnTimer>70){
-      spawnObstacle();spawnTimer=0;
-    }
+    if(spawnTimer>70){spawnObstacle();spawnTimer=0;}
 
-    // Move obstacles
     for(let i=obstacles.length-1;i>=0;i--){
       const o=obstacles[i];
       o.y+=o.speed;
       ctx.fillStyle=o.color;
       ctx.fillRect(o.x,o.y,o.width,o.height);
-      // Collision
+
       if(player.lane===o.lane&&
          player.x<o.x+o.width&&player.x+player.width>o.x&&
          player.y<o.y+o.height&&player.y+player.height>o.y){
@@ -212,7 +222,6 @@
       if(o.y>H+100)obstacles.splice(i,1);
     }
 
-    // Score
     score++;
     hud.textContent=`Score: ${score}`;
     requestAnimationFrame(update);
