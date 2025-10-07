@@ -22,12 +22,13 @@
             border: none; border-radius: 5px; cursor: pointer;
         }
         .hidden { display: none; }
+        #debug { position: absolute; top: 10px; left: 10px; color: white; font-size: 14px; }
     </style>
 </head>
 <body>
     <div id="startScreen">
         <h1>Tap to Play</h1>
-        <button onclick="startGame()">Start</button>
+        <button id="startButton" onclick="startGame()">Start</button>
     </div>
     <div id="gameOverScreen" class="hidden">
         <h1>Game Over</h1>
@@ -35,6 +36,7 @@
         <button onclick="restartGame()">Restart</button>
     </div>
     <canvas id="gameCanvas"></canvas>
+    <div id="debug"></div>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -51,7 +53,7 @@
         let player = { 
             lane: 1, 
             x: LANE_WIDTH * 1 + (LANE_WIDTH - 40) / 2, 
-            y: GROUND_Y - 60, // Adjusted for image height
+            y: GROUND_Y - 60, 
             width: 40, 
             height: 60, 
             baseSpeed: 6, 
@@ -62,10 +64,10 @@
             jumpPower: 12, 
             gravity: 0.6, 
             yVelocity: 0,
-            runFrame: 0 // For leg animation
+            runFrame: 0
         };
         let playerImage = new Image();
-        playerImage.src = 'https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg'; // Raw URL
+        playerImage.src = 'https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
         let obstacles = [];
         let score = 0;
         let gameOver = false;
@@ -73,6 +75,20 @@
         let lastSpawn = 0;
         let spawnInterval = 100;
         let baseObstacleSpeed = 4;
+
+        // Debug function
+        function updateDebug(message) {
+            document.getElementById('debug').textContent = message;
+        }
+
+        // Wait for image to load
+        playerImage.onload = function() {
+            updateDebug("Image loaded successfully!");
+        };
+        playerImage.onerror = function() {
+            updateDebug("Image failed to load. Using placeholder.");
+            playerImage.src = ''; // Clear failed image
+        };
 
         // Touch controls
         let touchStartX = 0, touchStartY = 0;
@@ -134,30 +150,34 @@
 
         // Draw player with image and leg animation
         function drawPlayer() {
-            if (playerImage.complete) {
+            if (playerImage.complete && playerImage.src) {
                 ctx.drawImage(playerImage, player.x, player.y, player.width, player.height);
+            } else {
+                ctx.fillStyle = 'red'; // Placeholder if image fails
+                ctx.fillRect(player.x, player.y, player.width, player.height);
             }
 
-            // Add simple leg animation (drawn over image)
-            ctx.fillStyle = 'black';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            let legAngle = player.jumping ? 0 : Math.sin(player.runFrame * 0.2) * 0.5;
-            player.runFrame++;
+            if (!player.jumping && playerImage.complete && playerImage.src) {
+                ctx.fillStyle = 'black';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                let legAngle = Math.sin(player.runFrame * 0.2) * 0.5;
+                player.runFrame++;
 
-            // Left leg
-            ctx.beginPath();
-            ctx.moveTo(player.x + 10, player.y + player.height);
-            ctx.lineTo(player.x + 10 - 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
-            ctx.lineTo(player.x + 5, player.y + player.height + 15);
-            ctx.stroke();
+                // Left leg
+                ctx.beginPath();
+                ctx.moveTo(player.x + 10, player.y + player.height);
+                ctx.lineTo(player.x + 10 - 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
+                ctx.lineTo(player.x + 5, player.y + player.height + 15);
+                ctx.stroke();
 
-            // Right leg
-            ctx.beginPath();
-            ctx.moveTo(player.x + 30, player.y + player.height);
-            ctx.lineTo(player.x + 30 + 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
-            ctx.lineTo(player.x + 35, player.y + player.height + 15);
-            ctx.stroke();
+                // Right leg
+                ctx.beginPath();
+                ctx.moveTo(player.x + 30, player.y + player.height);
+                ctx.lineTo(player.x + 30 + 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
+                ctx.lineTo(player.x + 35, player.y + player.height + 15);
+                ctx.stroke();
+            }
         }
 
         // Spawn obstacle
@@ -226,9 +246,12 @@
         }
 
         function startGame() {
-            gameStarted = true;
-            document.getElementById('startScreen').classList.add('hidden');
-            update();
+            if (!gameStarted) {
+                gameStarted = true;
+                document.getElementById('startScreen').classList.add('hidden');
+                update(); // Force start the game loop
+                updateDebug("Game started!");
+            }
         }
 
         function restartGame() {
