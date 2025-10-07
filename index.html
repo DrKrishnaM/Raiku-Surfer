@@ -1,349 +1,133 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Mobile Runner Game with Blackish Raiku</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #fff; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #startScreen, #gameOverScreen { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.6); color: white; 
-            display: flex; justify-content: center; align-items: center; flex-direction: column; 
-            text-align: center; font-family: Arial; 
-            transition: opacity 0.5s;
-            opacity: 0;
-        }
-        #startScreen:not(.hidden), #gameOverScreen:not(.hidden) { 
-            opacity: 1; 
-        }
-        #startScreen button, #gameOverScreen button { 
-            padding: 10px 20px; font-size: 18px; background: #007bff; color: white; 
-            border: none; border-radius: 5px; cursor: pointer;
-        }
-        .hidden { display: none; }
-        #debug { position: absolute; top: 10px; left: 10px; color: white; font-size: 14px; }
-    </style>
+  <title>Mobile Runner Game with Blackish Raiku</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; background: #fff; }
+    canvas { display: block; width: 100vw; height: 100vh; background: #fff; }
+    #startScreen, #gameOverScreen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6); color: white;
+      display: flex; justify-content: center; align-items: center; flex-direction: column;
+      text-align: center; font-family: Arial; transition: opacity 0.5s; opacity: 1;
+    }
+    #startScreen.hidden, #gameOverScreen.hidden { display: none; }
+    button {
+      padding: 10px 20px; font-size: 18px; background: #007bff; color: white;
+      border: none; border-radius: 5px; cursor: pointer;
+    }
+    #debug { position: absolute; top: 10px; left: 10px; color: black; font-size: 14px; z-index: 10; }
+  </style>
 </head>
 <body>
-    <div id="startScreen">
-        <h1>Tap to Play</h1>
-        <button id="startButton">Start</button>
-    </div>
-    <div id="gameOverScreen" class="hidden">
-        <h1>Game Over</h1>
-        <p>Score: <span id="finalScore">0</span></p>
-        <button id="restartButton">Restart</button>
-    </div>
-    <canvas id="gameCanvas"></canvas>
-    <div id="debug"></div>
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
-        ctx.scale(dpr, dpr);
+  <div id="startScreen">
+    <h1>Tap to Play</h1>
+    <button id="startButton">Start</button>
+  </div>
+  <div id="gameOverScreen" class="hidden">
+    <h1>Game Over</h1>
+    <p>Score: <span id="finalScore">0</span></p>
+    <button id="restartButton">Restart</button>
+  </div>
+  <canvas id="gameCanvas"></canvas>
+  <div id="debug"></div>
 
-        // Game constants
-        const LANE_WIDTH = (canvas.width / dpr) / 3;
-        const GROUND_Y = canvas.height / dpr - 80;
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const debug = (m)=>document.getElementById("debug").textContent=m;
 
-        // Player object with image
-        let player = { 
-            lane: 1, 
-            x: LANE_WIDTH * 1 + (LANE_WIDTH - 40) / 2, 
-            y: GROUND_Y - 60, 
-            width: 40, 
-            height: 60, 
-            baseSpeed: 6, 
-            speed: 6, 
-            maxSpeed: 12, 
-            xVelocity: 0, 
-            jumping: false, 
-            jumpPower: 12, 
-            gravity: 0.6, 
-            yVelocity: 0,
-            runFrame: 0
-        };
-        let playerImage = new Image();
-        playerImage.src = 'https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
-        let obstacles = [];
-        let score = 0;
-        let gameOver = false;
-        let gameStarted = false;
-        let lastSpawn = 0;
-        let spawnInterval = 100;
-        let baseObstacleSpeed = 4;
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
 
-        // Debug function
-        function updateDebug(message) {
-            document.getElementById('debug').textContent = message;
+    const dpr = window.devicePixelRatio || 1;
+    const LANE_WIDTH = (canvas.width / dpr) / 3;
+    const GROUND_Y = canvas.height / dpr - 80;
+
+    let player = { lane: 1, x: LANE_WIDTH + (LANE_WIDTH - 40)/2, y: GROUND_Y - 60, width: 40, height: 60,
+      baseSpeed: 6, speed: 6, maxSpeed: 12, jumping:false, yVelocity:0, gravity:0.6, jumpPower:12, runFrame:0 };
+    const playerImage = new Image();
+    playerImage.src = "https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg";
+
+    let obstacles = [], score = 0, gameOver = false, gameStarted = false, lastSpawn = 0, spawnInterval = 100;
+    let baseObstacleSpeed = 4;
+
+    function drawBackground(){
+      const g=ctx.createLinearGradient(0,0,0,canvas.height/dpr);
+      g.addColorStop(0,"#87CEEB"); g.addColorStop(1,"#E0F6FF");
+      ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width/dpr,canvas.height/dpr);
+      ctx.fillStyle="#4CAF50"; ctx.fillRect(0,GROUND_Y,canvas.width/dpr,80);
+      ctx.fillStyle="#808080"; ctx.fillRect(0,GROUND_Y+20,canvas.width/dpr,40);
+      ctx.fillStyle="white"; for(let x=0;x<canvas.width/dpr;x+=60) ctx.fillRect(x,GROUND_Y+35,30,5);
+    }
+
+    function drawPlayer(){
+      if (playerImage.complete) ctx.drawImage(playerImage,player.x,player.y,player.width,player.height);
+      else { ctx.fillStyle="red"; ctx.fillRect(player.x,player.y,player.width,player.height); }
+    }
+
+    function spawnObstacle(){
+      const lane = Math.floor(Math.random()*3);
+      const height = 40+Math.random()*40;
+      obstacles.push({x:canvas.width/dpr, y:GROUND_Y-height, width:40, height, lane, speed:baseObstacleSpeed});
+    }
+
+    function update(){
+      if(!gameStarted||gameOver) return;
+
+      ctx.clearRect(0,0,canvas.width/dpr,canvas.height/dpr);
+      drawBackground();
+
+      player.yVelocity += player.gravity;
+      player.y += player.yVelocity;
+      if(player.y>GROUND_Y-player.height){player.y=GROUND_Y-player.height;player.jumping=false;player.yVelocity=0;}
+      drawPlayer();
+
+      lastSpawn++;
+      if(lastSpawn>spawnInterval){spawnObstacle();lastSpawn=0;}
+
+      obstacles.forEach(o=>{
+        o.x -= o.speed;
+        const obsX = o.x + LANE_WIDTH*o.lane;
+        ctx.fillStyle="orange"; ctx.fillRect(obsX,o.y,o.width,o.height);
+        if(player.lane===o.lane && player.x<obsX+o.width && player.x+player.width>obsX && player.y<o.y+o.height && player.y+player.height>o.y){
+          gameOver=true;
+          document.getElementById("finalScore").textContent=score;
+          document.getElementById("gameOverScreen").classList.remove("hidden");
         }
+      });
+      obstacles=obstacles.filter(o=>o.x>-100);
+      score++;
+      ctx.fillStyle="black"; ctx.font="16px Arial"; ctx.fillText(`Score: ${score}`,10,30);
+      requestAnimationFrame(update);
+    }
 
-        // Wait for image to load
-        playerImage.onload = function() {
-            updateDebug("Image loaded successfully!");
-        };
-        playerImage.onerror = function() {
-            updateDebug("Image failed to load. Using placeholder.");
-            playerImage.src = ''; // Clear failed image
-        };
+    function startGame(){
+      debug("Starting...");
+      if(gameStarted) return;
+      gameStarted=true; gameOver=false;
+      document.getElementById("startScreen").classList.add("hidden");
+      setTimeout(()=>update(),0);
+    }
 
-        // Touch controls
-        let touchStartX = 0, touchStartY = 0;
-        // passive:false so preventDefault() works reliably on mobile
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-            if (!gameStarted && !gameOver) startGame(); // Start game on canvas touch too
-        }, { passive: false });
-        canvas.addEventListener('touchend', (e) => {
-            if (!gameStarted || gameOver) return;
-            let touchEndX = e.changedTouches[0].clientX;
-            let touchEndY = e.changedTouches[0].clientY;
-            let deltaX = touchEndX - touchStartX;
-            let deltaY = touchEndY - touchStartY;
-            if (Math.abs(deltaY) > Math.abs(deltaX) && deltaY < -30 && !player.jumping) {
-                player.yVelocity = -player.jumpPower;
-                player.jumping = true;
-            } else if (Math.abs(deltaX) > 30) {
-                if (deltaX > 0 && player.lane < 2) player.lane++;
-                else if (deltaX < 0 && player.lane > 0) player.lane--;
-                player.x = LANE_WIDTH * player.lane + (LANE_WIDTH - player.width) / 2;
-            }
-        });
+    function restartGame(){
+      obstacles=[]; score=0; gameOver=false; gameStarted=true;
+      document.getElementById("gameOverScreen").classList.add("hidden");
+      setTimeout(()=>update(),0);
+    }
 
-        // Draw background
-        function drawBackground() {
-            let skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height / dpr);
-            skyGradient.addColorStop(0, '#87CEEB');
-            skyGradient.addColorStop(1, '#E0F6FF');
-            ctx.fillStyle = skyGradient;
-            ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    document.getElementById("startButton").addEventListener("click", startGame);
+    document.getElementById("restartButton").addEventListener("click", restartGame);
+    canvas.addEventListener("touchstart",()=>{if(!gameStarted)startGame();},{passive:true});
 
-            ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(0, GROUND_Y, canvas.width / dpr, 80);
-            ctx.fillStyle = '#808080';
-            ctx.fillRect(0, GROUND_Y + 20, canvas.width / dpr, 40);
-            ctx.fillStyle = 'white';
-            for (let x = 0; x < canvas.width / dpr; x += 60) {
-                ctx.fillRect(x, GROUND_Y + 35, 30, 5);
-            }
-        }
-
-        // Draw player with image and leg animation
-        function drawPlayer() {
-            if (playerImage.complete && playerImage.src) {
-                ctx.drawImage(playerImage, player.x, player.y, player.width, player.height);
-            } else {
-                ctx.fillStyle = 'red'; // Placeholder if image fails
-                ctx.fillRect(player.x, player.y, player.width, player.height);
-            }
-
-            if (!player.jumping && playerImage.complete && playerImage.src) {
-                ctx.fillStyle = 'black';
-                ctx.strokeStyle = 'black';
-                ctx.lineWidth = 2;
-                let legAngle = Math.sin(player.runFrame * 0.2) * 0.5;
-                player.runFrame++;
-
-                // Left leg
-                ctx.beginPath();
-                ctx.moveTo(player.x + 10, player.y + player.height);
-                ctx.lineTo(player.x + 10 - 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
-                ctx.lineTo(player.x + 5, player.y + player.height + 15);
-                ctx.stroke();
-
-                // Right leg
-                ctx.beginPath();
-                ctx.moveTo(player.x + 30, player.y + player.height);
-                ctx.lineTo(player.x + 30 + 5 * Math.cos(legAngle), player.y + player.height + 10 * Math.sin(legAngle));
-                ctx.lineTo(player.x + 35, player.y + player.height + 15);
-                ctx.stroke();
-            }
-        }
-
-        // Spawn obstacle
-        function spawnObstacle() {
-            const rand = Math.random();
-            let obs;
-            const currentSpeed = baseObstacleSpeed + (score / 500) * 0.5;
-            if (rand < 0.3) { // Car
-                const carTypes = [
-                    { company: 'Toyota', color: 'blue', width: 60, height: 30 },
-                    { company: 'BMW', color: 'red', width: 50, height: 35 },
-                    { company: 'Mercedes', color: 'black', width: 70, height: 25 },
-                    { company: 'Audi', color: 'green', width: 55, height: 30 }
-                ];
-                const car = carTypes[Math.floor(Math.random() * carTypes.length)];
-                obs = { 
-                    type: 'car', 
-                    x: canvas.width / dpr, 
-                    y: GROUND_Y - car.height, 
-                    width: car.width, 
-                    height: car.height, 
-                    speed: currentSpeed,
-                    color: car.color,
-                    company: car.company,
-                    lane: Math.floor(Math.random() * 3)
-                };
-            } else if (rand < 0.5) { // Barrier
-                const barrierTypes = [
-                    { subtype: 'low', height: 20 },
-                    { subtype: 'high', height: 60 },
-                    { subtype: 'blocked', height: 80 }
-                ];
-                const barrier = barrierTypes[Math.floor(Math.random() * barrierTypes.length)];
-                obs = { 
-                    type: 'barrier', 
-                    x: canvas.width / dpr, 
-                    y: GROUND_Y - barrier.height, 
-                    width: 40, 
-                    height: barrier.height, 
-                    speed: currentSpeed,
-                    lane: Math.floor(Math.random() * 3),
-                    subtype: barrier.subtype
-                };
-            } else if (rand < 0.7) { // Pole
-                obs = { 
-                    type: 'pole', 
-                    x: canvas.width / dpr, 
-                    y: GROUND_Y - 70, 
-                    width: 20, 
-                    height: 70, 
-                    speed: currentSpeed,
-                    lane: Math.floor(Math.random() * 3)
-                };
-            } else { // Wall
-                obs = { 
-                    type: 'wall', 
-                    x: canvas.width / dpr, 
-                    y: 0, 
-                    width: LANE_WIDTH, 
-                    height: canvas.height / dpr, 
-                    speed: currentSpeed,
-                    lane: Math.floor(Math.random() * 3)
-                };
-            }
-            obstacles.push(obs);
-        }
-
-        function startGame() {
-            if (!gameStarted) {
-                gameStarted = true;
-                document.getElementById('startScreen').classList.add('hidden');
-                update(); // Force start the game loop
-                updateDebug("Game started!");
-            }
-        }
-
-        function restartGame() {
-            player = { 
-                lane: 1, 
-                x: LANE_WIDTH * 1 + (LANE_WIDTH - 40) / 2, 
-                y: GROUND_Y - 60, 
-                width: 40, 
-                height: 60, 
-                baseSpeed: 6, 
-                speed: 6, 
-                maxSpeed: 12, 
-                xVelocity: 0, 
-                jumping: false, 
-                jumpPower: 12, 
-                gravity: 0.6, 
-                yVelocity: 0,
-                runFrame: 0
-            };
-            obstacles = [];
-            score = 0;
-            gameOver = false;
-            lastSpawn = 0;
-            baseObstacleSpeed = 4;
-            document.getElementById('gameOverScreen').classList.add('hidden');
-            update();
-        }
-
-        // Expose to window to be safe for inline handlers / different scopes
-        window.startGame = startGame;
-        window.restartGame = restartGame;
-
-        // Attach listeners to buttons explicitly (more reliable)
-        document.getElementById('startButton').addEventListener('click', startGame);
-        document.getElementById('restartButton').addEventListener('click', restartGame);
-
-        function update() {
-            if (!gameStarted || gameOver) return;
-
-            ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
-
-            // Draw background
-            drawBackground();
-
-            // Update player speed
-            player.speed = Math.min(player.baseSpeed + (score / 500) * 0.5, player.maxSpeed);
-
-            // Player movement
-            player.yVelocity += player.gravity;
-            player.y += player.yVelocity;
-            if (player.y > GROUND_Y - player.height) {
-                player.y = GROUND_Y - player.height;
-                player.jumping = false;
-                player.yVelocity = 0;
-            }
-
-            // Draw player
-            drawPlayer();
-
-            // Spawn obstacles
-            lastSpawn++;
-            if (lastSpawn > spawnInterval) {
-                spawnObstacle();
-                lastSpawn = 0;
-            }
-
-            // Update and draw obstacles
-            obstacles.forEach((obs) => {
-                obs.x -= obs.speed;
-                let obsX = obs.x + LANE_WIDTH * obs.lane;
-
-                if (obs.type === 'car') {
-                    ctx.fillStyle = obs.color;
-                    ctx.fillRect(obsX, obs.y, obs.width, obs.height);
-                    ctx.fillStyle = 'white';
-                    ctx.font = '12px Arial';
-                    ctx.fillText(obs.company, obsX + 5, obs.y + 15);
-                } else if (obs.type === 'barrier') {
-                    ctx.fillStyle = 'orange';
-                    ctx.fillRect(obsX, obs.y, obs.width, obs.height);
-                } else if (obs.type === 'pole') {
-                    ctx.fillStyle = 'gray';
-                    ctx.fillRect(obsX + (obs.width / 2), obs.y, obs.width, obs.height);
-                } else if (obs.type === 'wall') {
-                    ctx.fillStyle = 'brown';
-                    ctx.fillRect(obsX, obs.y, obs.width, obs.height);
-                }
-
-                // Collision detection
-                if (player.lane === obs.lane &&
-                    player.x < obsX + obs.width && player.x + player.width > obsX &&
-                    player.y < obs.y + obs.height && player.y + player.height > obs.y) {
-                    gameOver = true;
-                    document.getElementById('finalScore').textContent = score;
-                    document.getElementById('gameOverScreen').classList.remove('hidden');
-                }
-            });
-            obstacles = obstacles.filter(obs => obs.x >= -(LANE_WIDTH + 100));
-
-            // Score and speed display
-            score++;
-            ctx.fillStyle = 'black';
-            ctx.font = `${Math.min(canvas.width / dpr / 20, 20)}px Arial`;
-            ctx.fillText(`Score: ${score} | Speed: ${player.speed.toFixed(1)}`, 10, 30);
-
-            requestAnimationFrame(update);
-        }
-    </script>
+    debug("Ready!");
+  </script>
 </body>
 </html>
