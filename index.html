@@ -1,234 +1,173 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Raiku Runner</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <style>
-    html,body{
-      height:100%;margin:0;overflow:hidden;background:#222;
-      font-family:Arial,Helvetica,sans-serif;
-    }
-    canvas{
-      display:block;
-      width:100vw;
-      height:100vh;
-      background:#444;
-    }
-    #startScreen,#gameOverScreen{
-      position:absolute;
-      inset:0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      flex-direction:column;
-      background:rgba(0,0,0,0.75);
-      color:#fff;
-      z-index:10;
-      transition:opacity 0.4s ease;
-    }
-    #startScreen.hidden,#gameOverScreen.hidden{
-      opacity:0;
-      pointer-events:none;
-      z-index:-1;
-    }
-    button{
-      padding:10px 20px;
-      font-size:16px;
-      border:none;
-      border-radius:8px;
-      background:#007bff;
-      color:white;
-      cursor:pointer;
-      margin-top:10px;
-    }
-    #hud{
-      position:absolute;
-      top:10px;
-      left:10px;
-      color:#fff;
-      font-weight:bold;
-      text-shadow:0 1px 2px rgba(0,0,0,0.7);
-      z-index:5;
-      font-size:18px;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>Raiku Free Run</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+html,body{margin:0;overflow:hidden;height:100%;font-family:Arial;}
+canvas{display:block;width:100vw;height:100vh;background:#222;}
+#startScreen,#gameOverScreen{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.75);color:#fff;
+  z-index:10;transition:opacity 0.4s ease;
+}
+#startScreen.hidden,#gameOverScreen.hidden{opacity:0;pointer-events:none;z-index:-1;}
+button{padding:10px 20px;font-size:16px;border:none;border-radius:8px;background:#007bff;color:white;cursor:pointer;margin-top:10px;}
+#hud{position:absolute;top:10px;left:10px;color:#fff;font-size:18px;font-weight:bold;text-shadow:0 1px 2px rgba(0,0,0,0.7);z-index:5;display:none;}
+</style>
 </head>
 <body>
-  <div id="startScreen">
-    <h1>Tap to Play</h1>
-    <button id="startBtn">Start</button>
-    <p style="font-size:13px;color:#ccc">Swipe left/right to move • Swipe up to jump</p>
-  </div>
+<div id="startScreen">
+  <h1>Tap to Play</h1>
+  <button id="startBtn">Start</button>
+  <p style="font-size:13px;color:#ccc">Swipe left/right to dodge cars</p>
+</div>
+<div id="gameOverScreen" class="hidden">
+  <h1>Game Over</h1>
+  <p>Score: <span id="finalScore">0</span></p>
+  <button id="restartBtn">Restart</button>
+</div>
+<div id="hud">Score: 0</div>
+<canvas id="gameCanvas"></canvas>
 
-  <div id="gameOverScreen" class="hidden">
-    <h1>Game Over</h1>
-    <p>Score: <span id="finalScore">0</span></p>
-    <button id="restartBtn">Restart</button>
-  </div>
+<script>
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
 
-  <div id="hud" style="display:none;">Score: 0</div>
-  <canvas id="gameCanvas"></canvas>
+function resizeCanvas(){
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=window.innerWidth*dpr;
+  canvas.height=window.innerHeight*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resizeCanvas();
+window.addEventListener("resize",resizeCanvas);
 
-  <script>
-  const canvas=document.getElementById("gameCanvas");
-  const ctx=canvas.getContext("2d");
+let W=window.innerWidth,H=window.innerHeight;
+let LANE_W=W/3;
+let GROUND_Y=H-80;
 
-  function resizeCanvas(){
-    const dpr=window.devicePixelRatio||1;
-    canvas.width=window.innerWidth*dpr;
-    canvas.height=window.innerHeight*dpr;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  resizeCanvas();
-  window.addEventListener("resize",resizeCanvas);
+let player={
+  width:40,height:60,x:W/2-20,y:GROUND_Y-60, speed:10
+};
+const raiku=new Image();
+raiku.src='https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
 
-  let W=window.innerWidth,H=window.innerHeight;
-  let LANE_W=W/3;
-  let GROUND_Y=H-80;
+let gameStarted=false,gameOver=false,score=0,obstacles=[],spawnTimer=0;
+const baseSpeed=5;
+const hud=document.getElementById("hud");
 
-  let player={
-    lane:1,width:45,height:70,
-    x:LANE_W*1+(LANE_W-45)/2,
-    y:GROUND_Y-70,
-    yVel:0,gravity:0.8,jumpPower:14,jumping:false,runFrame:0
-  };
+let touchX=0;
+canvas.addEventListener("touchstart",e=>{
+  touchX=e.touches[0].clientX;
+});
+canvas.addEventListener("touchmove",e=>{
+  if(!gameStarted||gameOver)return;
+  const dx=e.touches[0].clientX-touchX;
+  player.x+=dx;
+  if(player.x<0)player.x=0;
+  if(player.x+player.width>W)player.x=W-player.width;
+  touchX=e.touches[0].clientX;
+  e.preventDefault();
+},{passive:false});
 
-  const raiku=new Image();
-  raiku.src='https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
-
-  let gameStarted=false,gameOver=false,score=0,obstacles=[],spawnTimer=0;
-  const baseSpeed=4;
-  const hud=document.getElementById("hud");
-
-  // Touch Controls
-  let startX=0,startY=0;
-  canvas.addEventListener("touchstart",e=>{
-    e.preventDefault();
-    startX=e.touches[0].clientX;
-    startY=e.touches[0].clientY;
-  },{passive:false});
-
-  canvas.addEventListener("touchend",e=>{
-    if(!gameStarted||gameOver)return;
-    const dx=e.changedTouches[0].clientX-startX;
-    const dy=e.changedTouches[0].clientY-startY;
-    if(Math.abs(dy)>Math.abs(dx)&&dy<-30&&!player.jumping){
-      player.jumping=true;player.yVel=-player.jumpPower;
-    }else if(Math.abs(dx)>30){
-      if(dx>0&&player.lane<2)player.lane++;
-      else if(dx<0&&player.lane>0)player.lane--;
-      player.x=LANE_W*player.lane+(LANE_W-player.width)/2;
+function drawBackground(){
+  ctx.fillStyle="#333";
+  ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=4;
+  for(let i=1;i<3;i++){
+    const x=i*LANE_W;
+    for(let y=-40;y<H;y+=40){
+      ctx.beginPath();
+      ctx.moveTo(x,y+(score%40));
+      ctx.lineTo(x,y+20+(score%40));
+      ctx.stroke();
     }
+  }
+  ctx.fillStyle="#2e7d32";
+  ctx.fillRect(0,GROUND_Y,W,80);
+}
+
+function drawPlayer(){
+  if(raiku.complete&&raiku.naturalWidth){
+    ctx.drawImage(raiku,player.x,player.y,player.width,player.height);
+  }else{
+    ctx.fillStyle="red";
+    ctx.fillRect(player.x,player.y,player.width,player.height);
+  }
+}
+
+const carImages=[]; 
+const carUrls=[
+'https://upload.wikimedia.org/wikipedia/commons/3/36/Red_sports_car_top_view.png',
+'https://upload.wikimedia.org/wikipedia/commons/8/8b/Blue_car_top_view.png',
+'https://upload.wikimedia.org/wikipedia/commons/5/52/Yellow_car_top_view.png'
+];
+carUrls.forEach(url=>{
+  const img=new Image(); img.src=url; carImages.push(img);
+});
+
+function spawnObstacle(){
+  const lane=Math.floor(Math.random()*3);
+  const img=carImages[Math.floor(Math.random()*carImages.length)];
+  obstacles.push({
+    x:LANE_W*lane+(LANE_W-60)/2,
+    y:-100,width:60,height:100,img,imgSpeed:baseSpeed+score/300
   });
+}
 
-  function drawBackground(){
-    ctx.fillStyle="#444";
-    ctx.fillRect(0,0,W,H);
+function startGame(){
+  gameStarted=true;gameOver=false;score=0;obstacles=[];
+  player.x=W/2-20;
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("gameOverScreen").classList.add("hidden");
+  hud.style.display="block";
+  update();
+}
 
-    // moving lane stripes
-    ctx.strokeStyle="#fff";
-    ctx.lineWidth=4;
-    for(let i=1;i<3;i++){
-      const x=i*LANE_W;
-      for(let y=-40;y<H;y+=40){
-        ctx.beginPath();
-        ctx.moveTo(x,y+(score%40));
-        ctx.lineTo(x,y+20+(score%40));
-        ctx.stroke();
-      }
+function restartGame(){
+  gameOver=false;gameStarted=true;score=0;obstacles=[];
+  player.x=W/2-20;
+  document.getElementById("gameOverScreen").classList.add("hidden");
+  hud.style.display="block";
+  update();
+}
+
+function update(){
+  if(!gameStarted||gameOver)return;
+  ctx.clearRect(0,0,W,H);
+  drawBackground();
+  drawPlayer();
+
+  spawnTimer++;
+  if(spawnTimer>80){spawnObstacle();spawnTimer=0;}
+
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];
+    o.y+=o.imgSpeed;
+    if(o.img.complete)o.img.naturalWidth?ctx.drawImage(o.img,o.x,o.y,o.width,o.height):ctx.fillRect(o.x,o.y,o.width,o.height);
+    else ctx.fillRect(o.x,o.y,o.width,o.height);
+
+    if(player.x<o.x+o.width&&player.x+player.width>o.x&&player.y<o.y+o.height&&player.y+player.height>o.y){
+      gameOver=true;
+      document.getElementById("finalScore").textContent=score;
+      document.getElementById("gameOverScreen").classList.remove("hidden");
+      hud.style.display="none";
+      return;
     }
-
-    // side grass
-    ctx.fillStyle="#2e7d32";
-    ctx.fillRect(0,GROUND_Y,W,80);
+    if(o.y>H+150)obstacles.splice(i,1);
   }
 
-  function drawPlayer(){
-    if(raiku.complete&&raiku.naturalWidth){
-      ctx.drawImage(raiku,player.x,player.y,player.width,player.height);
-    }else{
-      ctx.fillStyle="red";
-      ctx.fillRect(player.x,player.y,player.width,player.height);
-    }
-  }
+  score++;
+  hud.textContent=`Score: ${score}`;
+  requestAnimationFrame(update);
+}
 
-  function spawnObstacle(){
-    const lane=Math.floor(Math.random()*3);
-    const rand=Math.random();
-    if(rand<0.5){
-      const colors=["blue","red","black","green"];
-      const color=colors[Math.floor(Math.random()*colors.length)];
-      obstacles.push({lane,x:LANE_W*lane+(LANE_W-60)/2,y:-30,width:60,height:30,color,speed:baseSpeed+score/300});
-    }else{
-      const h=40+Math.random()*30;
-      obstacles.push({lane,x:LANE_W*lane+(LANE_W-40)/2,y:-h,width:40,height:h,color:"orange",speed:baseSpeed+score/300});
-    }
-  }
-
-  function startGame(){
-    gameStarted=true;gameOver=false;score=0;obstacles=[];
-    player.lane=1;
-    player.x=LANE_W+(LANE_W-player.width)/2;
-    document.getElementById("startScreen").classList.add("hidden");
-    document.getElementById("gameOverScreen").classList.add("hidden");
-    hud.style.display="block";
-    update();
-  }
-
-  function restartGame(){
-    gameOver=false;gameStarted=true;score=0;obstacles=[];
-    player.lane=1;
-    player.x=LANE_W+(LANE_W-player.width)/2;
-    document.getElementById("gameOverScreen").classList.add("hidden");
-    hud.style.display="block";
-    update();
-  }
-
-  function update(){
-    if(!gameStarted||gameOver)return;
-    ctx.clearRect(0,0,W,H);
-    drawBackground();
-
-    if(player.jumping){
-      player.y+=player.yVel;
-      player.yVel+=player.gravity;
-      if(player.y>=GROUND_Y-player.height){
-        player.y=GROUND_Y-player.height;
-        player.jumping=false;player.yVel=0;
-      }
-    }
-
-    drawPlayer();
-
-    spawnTimer++;
-    if(spawnTimer>70){spawnObstacle();spawnTimer=0;}
-
-    for(let i=obstacles.length-1;i>=0;i--){
-      const o=obstacles[i];
-      o.y+=o.speed;
-      ctx.fillStyle=o.color;
-      ctx.fillRect(o.x,o.y,o.width,o.height);
-
-      if(player.lane===o.lane&&
-         player.x<o.x+o.width&&player.x+player.width>o.x&&
-         player.y<o.y+o.height&&player.y+player.height>o.y){
-           gameOver=true;
-           document.getElementById("finalScore").textContent=score;
-           document.getElementById("gameOverScreen").classList.remove("hidden");
-           hud.style.display="none";
-           return;
-      }
-      if(o.y>H+100)obstacles.splice(i,1);
-    }
-
-    score++;
-    hud.textContent=`Score: ${score}`;
-    requestAnimationFrame(update);
-  }
-
-  document.getElementById("startBtn").onclick=startGame;
-  document.getElementById("restartBtn").onclick=restartGame;
-  </script>
+document.getElementById("startBtn").onclick=startGame;
+document.getElementById("restartBtn").onclick=restartGame;
+</script>
 </body>
 </html>
