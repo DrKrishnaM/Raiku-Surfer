@@ -2,391 +2,224 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Vertical Runner - Raiku</title>
+  <title>Raiku Runner</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <style>
-    html,body{height:100%;margin:0;background:#cbe7ff;overflow:hidden;font-family:Arial,Helvetica,sans-serif}
-    canvas{display:block;width:100vw;height:100vh}
+    html,body{
+      height:100%;margin:0;overflow:hidden;background:#cbe7ff;
+      font-family:Arial,Helvetica,sans-serif;
+    }
+    canvas{display:block;width:100vw;height:100vh;}
     #startScreen,#gameOverScreen{
       position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-      background:rgba(0,0,0,0.55);color:#fff;flex-direction:column;z-index:20;
+      flex-direction:column;background:rgba(0,0,0,0.6);color:#fff;z-index:10;
     }
-    .hidden{display:none}
-    button{padding:12px 20px;border-radius:8px;border:0;background:#ff6b6b;color:#fff;font-size:16px}
-    #hud{position:absolute;left:12px;top:12px;color:#fff;z-index:15;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,0.6)}
+    .hidden{display:none;}
+    button{
+      padding:10px 20px;font-size:16px;border:none;border-radius:8px;
+      background:#007bff;color:white;cursor:pointer;
+    }
+    #hud{
+      position:absolute;top:10px;left:10px;color:#fff;font-weight:bold;
+      text-shadow:0 1px 2px rgba(0,0,0,0.7);z-index:5;
+    }
   </style>
 </head>
 <body>
   <div id="startScreen">
-    <h1 style="margin:0 0 10px 0">Tap to Play</h1>
+    <h1>Tap to Play</h1>
     <button id="startBtn">Start</button>
-    <p style="margin-top:12px;font-size:14px;color:#eee">Swipe left/right to change lane • Swipe up to jump</p>
+    <p style="font-size:13px;color:#ccc">Swipe left/right to move • Swipe up to jump</p>
   </div>
 
   <div id="gameOverScreen" class="hidden">
-    <h1 style="margin:0 0 10px 0">Game Over</h1>
-    <p style="margin:0 0 10px 0">Score: <span id="finalScore">0</span></p>
+    <h1>Game Over</h1>
+    <p>Score: <span id="finalScore">0</span></p>
     <button id="restartBtn">Restart</button>
   </div>
 
   <div id="hud">Score: 0</div>
-  <canvas id="c"></canvas>
+  <canvas id="gameCanvas"></canvas>
 
   <script>
-  (function(){
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
+  const canvas=document.getElementById("gameCanvas");
+  const ctx=canvas.getContext("2d");
+  function resizeCanvas(){
+    const dpr=window.devicePixelRatio||1;
+    canvas.width=window.innerWidth*dpr;
+    canvas.height=window.innerHeight*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resizeCanvas();
+  window.addEventListener("resize",resizeCanvas);
 
-    // DPR & resize
-    function fitCanvas(){
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
-      ctx.setTransform(dpr,0,0,dpr,0,0);
+  // Metrics
+  let W=window.innerWidth,H=window.innerHeight;
+  let LANE_W=W/3;
+  let GROUND_Y=H-80;
+
+  // Player
+  let player={
+    lane:1,width:45,height:70,
+    x:LANE_W*1+(LANE_W-45)/2,
+    y:GROUND_Y-70,
+    yVel:0,gravity:0.8,jumpPower:14,jumping:false,runFrame:0
+  };
+  const raiku=new Image();
+  raiku.src='https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
+
+  let gameStarted=false,gameOver=false,score=0,obstacles=[],spawnTimer=0;
+  const baseSpeed=4;
+  const hud=document.getElementById("hud");
+
+  // Touch Controls
+  let startX=0,startY=0;
+  canvas.addEventListener("touchstart",e=>{
+    e.preventDefault();
+    startX=e.touches[0].clientX;
+    startY=e.touches[0].clientY;
+    if(!gameStarted&&!gameOver)startGame();
+  },{passive:false});
+
+  canvas.addEventListener("touchend",e=>{
+    if(!gameStarted||gameOver)return;
+    const dx=e.changedTouches[0].clientX-startX;
+    const dy=e.changedTouches[0].clientY-startY;
+    if(Math.abs(dy)>Math.abs(dx)&&dy<-30&&!player.jumping){
+      player.jumping=true;player.yVel=-player.jumpPower;
+    }else if(Math.abs(dx)>30){
+      if(dx>0&&player.lane<2)player.lane++;
+      else if(dx<0&&player.lane>0)player.lane--;
+      player.x=LANE_W*player.lane+(LANE_W-player.width)/2;
     }
-    fitCanvas();
-    window.addEventListener('resize', ()=>{ fitCanvas(); setupMetrics(); });
+  });
 
-    // Metrics
-    let W, H, LANE_W, GROUND_Y;
-    function setupMetrics(){
-      W = canvas.width / (window.devicePixelRatio || 1);
-      H = canvas.height / (window.devicePixelRatio || 1);
-      LANE_W = W / 3;
-      GROUND_Y = H - 80;
-    }
-    setupMetrics();
-
-    // Player (bottom center lane)
-    let player = {
-      lane:1,
-      width:48,
-      height:72,
-      x:0,
-      y:0,
-      baseY:0,
-      speed:0,
-      jumpPower:15,
-      gravity:0.8,
-      yVel:0,
-      jumping:false,
-      runFrame:0
-    };
-
-    // image (Raiku)
-    const raiku = new Image();
-    raiku.crossOrigin = 'anonymous';
-    raiku.src = 'https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
-    raiku.onload = ()=>{/* ok */};
-    raiku.onerror = ()=>{/* silent */};
-
-    function positionPlayer(){
-      player.x = player.lane * LANE_W + (LANE_W - player.width)/2;
-      player.baseY = GROUND_Y - player.height;
-      if(!player.jumping) player.y = player.baseY;
-    }
-    positionPlayer();
-
-    // Background city buildings (arrays left & right)
-    const buildingsLeft = [];
-    const buildingsRight = [];
-    function createBuildings(){
-      buildingsLeft.length = 0; buildingsRight.length = 0;
-      for(let i=0;i<8;i++){
-        const h = 80 + Math.random()*200;
-        buildingsLeft.push({x: 10, y: i * -150, w: LANE_W*0.9, h: h, speed: 2 + Math.random()*1});
-        const h2 = 80 + Math.random()*220;
-        buildingsRight.push({x: W - LANE_W*0.9 - 10, y: i * -150 - 60, w: LANE_W*0.9, h: h2, speed: 2 + Math.random()*1});
-      }
-    }
-    createBuildings();
-
-    // Obstacles: cars, barriers, poles
-    let obstacles = [];
-
-    // Game state
-    let gameStarted=false, gameOver=false, score=0, spawnTimer=0, spawnInterval=80, baseSpeed=3;
-    const hud = document.getElementById('hud');
-
-    // Spawning obstacles from top (y negative) moving down (y increases)
-    function spawnObstacle(){
-      const typeRand = Math.random();
-      const lane = Math.floor(Math.random()*3);
-      if(typeRand < 0.4){ // car
-        const carTypes = [
-          {w:60,h:32,color:'#2b7cff'},
-          {w:52,h:36,color:'#ff3b3b'},
-          {w:66,h:28,color:'#222'},
-          {w:56,h:34,color:'#2ecc71'}
-        ];
-        const car = carTypes[Math.floor(Math.random()*carTypes.length)];
-        obstacles.push({type:'car', lane, x: lane*LANE_W + (LANE_W-car.w)/2, y: -car.h - 10, width:car.w, height:car.h, color:car.color, speed: baseSpeed + score/200});
-      } else if(typeRand < 0.7){ // barrier
-        const h = 20 + Math.floor(Math.random()*60);
-        obstacles.push({type:'barrier', lane, x: lane*LANE_W + (LANE_W-40)/2, y:-h-10, width:40, height:h, color:'#ff8c00', speed: baseSpeed + score/220});
-      } else if(typeRand < 0.85){ // pole
-        obstacles.push({type:'pole', lane, x: lane*LANE_W + (LANE_W-16)/2, y:-70, width:16, height:70, color:'#888', speed: baseSpeed + score/250});
-      } else { // wall (full lane blocker)
-        obstacles.push({type:'wall', lane, x: lane*LANE_W, y:-H, width:LANE_W-8, height:H*0.6, color:'#6b4b3a', speed: baseSpeed + score/300});
-      }
-    }
-
-    // Controls - touch swipe
-    let tStartX=0, tStartY=0, tStartTime=0;
-    canvas.addEventListener('touchstart',(e)=>{
-      e.preventDefault();
-      const t = e.touches[0];
-      tStartX = t.clientX; tStartY = t.clientY; tStartTime = Date.now();
-      if(!gameStarted && !gameOver){ startGame(); }
-    }, {passive:false});
-    canvas.addEventListener('touchend',(e)=>{
-      if(!gameStarted || gameOver) return;
-      const t = e.changedTouches[0];
-      const dx = t.clientX - tStartX;
-      const dy = t.clientY - tStartY;
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-
-      // quick swipe thresholds
-      if(adx > 30 && adx > ady){
-        if(dx > 0) { // swipe right
-          if(player.lane < 2) { player.lane++; animateLaneChange(); }
-        } else { // swipe left
-          if(player.lane > 0) { player.lane--; animateLaneChange(); }
-        }
-      } else if(ady > 30 && dy < 0){ // swipe up -> jump
-        if(!player.jumping){ player.jumping = true; player.yVel = -player.jumpPower; }
-      }
-    }, {passive:true});
-
-    // Also allow simple tap left/right areas for lane change
-    canvas.addEventListener('click',(e)=>{
-      const cx = e.clientX;
-      if(!gameStarted && !gameOver){ startGame(); return; }
-      if(!gameStarted || gameOver) return;
-      const third = window.innerWidth/3;
-      if(cx < third){ if(player.lane>0){ player.lane--; animateLaneChange(); } }
-      else if(cx > 2*third){ if(player.lane<2){ player.lane++; animateLaneChange(); } }
-      // center tap -> jump
-      else { if(!player.jumping){ player.jumping=true; player.yVel = -player.jumpPower; } }
-    });
-
-    // Smooth lane animation
-    let laneAnim = null;
-    function animateLaneChange(){
-      const targetX = player.lane * LANE_W + (LANE_W - player.width)/2;
-      const startX = player.x;
-      const dur = 140;
-      const start = performance.now();
-      if(laneAnim) cancelAnimationFrame(laneAnim);
-      function step(ts){
-        const t = Math.min(1,(ts - start)/dur);
-        const ease = t<0.5 ? 2*t*t : -1 + (4-2*t)*t;
-        player.x = startX + (targetX - startX) * ease;
-        if(t<1) laneAnim = requestAnimationFrame(step);
-        else player.x = targetX;
-      }
-      laneAnim = requestAnimationFrame(step);
-    }
-
-    // Draw everything
-    function drawBackground(){
-      // sky
-      const g = ctx.createLinearGradient(0,0,0,H);
-      g.addColorStop(0,'#a8ddff'); g.addColorStop(1,'#e6f6ff');
-      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
-      // buildings left & right
-      buildingsLeft.forEach(b=>{
-        ctx.fillStyle = '#2f3b4a';
-        ctx.fillRect(b.x, b.y + H*0.2, b.w, b.h);
-        // windows
-        ctx.fillStyle = '#ffd';
-        for(let yy = b.y + H*0.2 + 6; yy < b.y + H*0.2 + b.h - 6; yy += 18){
-          for(let xx = b.x + 8; xx < b.x + b.w - 8; xx += 14){
-            if(Math.random() > 0.3) ctx.fillRect(xx, yy, 8, 10);
-          }
-        }
-      });
-      buildingsRight.forEach(b=>{
-        ctx.fillStyle = '#3a3f4f';
-        ctx.fillRect(b.x, b.y + H*0.2, b.w, b.h);
-        ctx.fillStyle = '#ffd';
-        for(let yy = b.y + H*0.2 + 6; yy < b.y + H*0.2 + b.h - 6; yy += 18){
-          for(let xx = b.x + 8; xx < b.x + b.w - 8; xx += 14){
-            if(Math.random() > 0.3) ctx.fillRect(xx, yy, 8, 10);
-          }
-        }
-      });
-
-      // road (center)
-      ctx.fillStyle = '#333';
-      ctx.fillRect(LANE_W*0.05 + LANE_W*1/2 - LANE_W/2, GROUND_Y - 200, LANE_W*3 - LANE_W*0.1, H - (GROUND_Y - 200));
-      // lane dividers - moving stripes
-      const stripeH = 18;
-      const offset = (score/6) % (stripeH*2);
-      ctx.fillStyle = '#fff';
-      for(let lane=0;lane<3;lane++){
-        const laneX = lane*LANE_W + (LANE_W - 6)/2;
-        for(let y = -stripeH*4 + offset; y < H; y += stripeH*4){
-          ctx.fillRect(laneX + (LANE_W - 6)/2 - 3, y, 6, stripeH*2);
-        }
-      }
-    }
-
-    function drawPlayer(){
-      // body image
-      ctx.save();
-      // slight bob while running
-      const bob = player.jumping ? Math.max(-6, player.y - player.baseY) : Math.sin(player.runFrame*0.18)*3;
-      ctx.translate(player.x, player.y + bob);
-      if(raiku.complete && raiku.naturalWidth){
-        ctx.drawImage(raiku, 0, 0, player.width, player.height);
-      } else {
-        ctx.fillStyle = '#1f1f1f';
-        ctx.fillRect(0,0,player.width,player.height);
-      }
-
-      // legs animation overlay when not jumping
-      if(!player.jumping){
-        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-        const ang = Math.sin(player.runFrame*0.25) * 0.7;
-        // left leg
+  function drawBackground(){
+    // Road
+    ctx.fillStyle="#444";
+    ctx.fillRect(0,0,W,H);
+    // Lanes
+    ctx.strokeStyle="#fff";
+    ctx.lineWidth=4;
+    for(let i=1;i<3;i++){
+      const x=i*LANE_W;
+      for(let y=-40;y<H;y+=40){
         ctx.beginPath();
-        ctx.moveTo(12, player.height);
-        ctx.lineTo(12 - 6*Math.cos(ang), player.height + 12*Math.sin(ang));
-        ctx.stroke();
-        // right leg
-        ctx.beginPath();
-        ctx.moveTo(player.width - 12, player.height);
-        ctx.lineTo(player.width - 12 + 6*Math.cos(ang), player.height + 12*Math.sin(ang));
+        ctx.moveTo(x,y+(score%40));
+        ctx.lineTo(x,y+20+(score%40));
         ctx.stroke();
       }
-      ctx.restore();
+    }
+    // Roadside grass
+    ctx.fillStyle="#2e7d32";
+    ctx.fillRect(0,GROUND_Y, W, 80);
+  }
 
-      player.runFrame++;
+  function drawPlayer(){
+    if(raiku.complete&&raiku.naturalWidth){
+      ctx.drawImage(raiku,player.x,player.y,player.width,player.height);
+    }else{
+      ctx.fillStyle="red";
+      ctx.fillRect(player.x,player.y,player.width,player.height);
     }
 
-    function update(dt){
-      if(!gameStarted || gameOver) return;
+    // simple leg motion when running
+    if(!player.jumping){
+      const ang=Math.sin(player.runFrame*0.25)*0.5;
+      ctx.strokeStyle="#000";
+      ctx.beginPath();
+      ctx.moveTo(player.x+12,player.y+player.height);
+      ctx.lineTo(player.x+12-6*Math.cos(ang),player.y+player.height+10*Math.sin(ang));
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(player.x+33,player.y+player.height);
+      ctx.lineTo(player.x+33+6*Math.cos(ang),player.y+player.height+10*Math.sin(ang));
+      ctx.stroke();
+    }
+    player.runFrame++;
+  }
 
-      // background buildings move down to simulate forward motion
-      buildingsLeft.forEach(b => { b.y += 2 + score/500; if(b.y > H) b.y = -200 - Math.random()*200; });
-      buildingsRight.forEach(b => { b.y += 2 + score/500; if(b.y > H) b.y = -200 - Math.random()*200; });
+  function spawnObstacle(){
+    const lane=Math.floor(Math.random()*3);
+    const rand=Math.random();
+    if(rand<0.5){ // car
+      const carColors=["blue","red","black","green"];
+      const color=carColors[Math.floor(Math.random()*carColors.length)];
+      obstacles.push({type:"car",lane,x:LANE_W*lane+(LANE_W-60)/2,y:-30,width:60,height:30,color,speed:baseSpeed+score/300});
+    }else if(rand<0.8){ // barrier
+      const h=30+Math.random()*40;
+      obstacles.push({type:"barrier",lane,x:LANE_W*lane+(LANE_W-40)/2,y:-h,width:40,height:h,color:"orange",speed:baseSpeed+score/300});
+    }else{ // pole
+      obstacles.push({type:"pole",lane,x:LANE_W*lane+(LANE_W-20)/2,y:-60,width:20,height:60,color:"gray",speed:baseSpeed+score/300});
+    }
+  }
 
-      // jump physics
-      if(player.jumping){
-        player.y += player.yVel;
-        player.yVel += player.gravity;
-        if(player.y >= player.baseY){
-          player.y = player.baseY; player.jumping = false; player.yVel = 0;
-        }
-      } else {
-        // ensure x matches lane center if not animating
-        const targetX = player.lane * LANE_W + (LANE_W - player.width)/2;
-        if(Math.abs(player.x - targetX) < 0.5) player.x = targetX;
+  function startGame(){
+    gameStarted=true;gameOver=false;score=0;obstacles=[];
+    document.getElementById("startScreen").classList.add("hidden");
+    document.getElementById("gameOverScreen").classList.add("hidden");
+    hud.style.display="block";
+    update();
+  }
+
+  function restartGame(){
+    gameOver=false;gameStarted=true;score=0;obstacles=[];
+    document.getElementById("gameOverScreen").classList.add("hidden");
+    hud.style.display="block";
+    update();
+  }
+
+  function update(){
+    if(!gameStarted||gameOver)return;
+    ctx.clearRect(0,0,W,H);
+    drawBackground();
+
+    // Jump physics
+    if(player.jumping){
+      player.y+=player.yVel;
+      player.yVel+=player.gravity;
+      if(player.y>=GROUND_Y-player.height){
+        player.y=GROUND_Y-player.height;
+        player.jumping=false;player.yVel=0;
       }
+    }
 
-      // spawn obstacles
-      spawnTimer++;
-      const effectiveInterval = Math.max(30, spawnInterval - Math.floor(score/400));
-      if(spawnTimer > effectiveInterval){
-        spawnObstacle();
-        spawnTimer = 0;
+    // Player
+    drawPlayer();
+
+    // Spawn obstacles
+    spawnTimer++;
+    if(spawnTimer>70){
+      spawnObstacle();spawnTimer=0;
+    }
+
+    // Move obstacles
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o=obstacles[i];
+      o.y+=o.speed;
+      ctx.fillStyle=o.color;
+      ctx.fillRect(o.x,o.y,o.width,o.height);
+      // Collision
+      if(player.lane===o.lane&&
+         player.x<o.x+o.width&&player.x+player.width>o.x&&
+         player.y<o.y+o.height&&player.y+player.height>o.y){
+           gameOver=true;
+           document.getElementById("finalScore").textContent=score;
+           document.getElementById("gameOverScreen").classList.remove("hidden");
+           hud.style.display="none";
+           return;
       }
-
-      // update obstacles
-      for(let i=obstacles.length-1;i>=0;i--){
-        const o = obstacles[i];
-        o.y += o.speed;
-        // collision area depends on lane; compute current x
-        const ox = o.lane * LANE_W + (o.x !== undefined ? 0 : 0);
-        const obsX = o.x; // already set x per lane in spawn
-        // simple rect collision
-        if(player.x < obsX + o.width && player.x + player.width > obsX &&
-           player.y < o.y + o.height && player.y + player.height > o.y){
-          // hit
-          gameOver = true;
-          document.getElementById('finalScore').textContent = score;
-          document.getElementById('gameOverScreen').classList.remove('hidden');
-        }
-        // remove offscreen
-        if(o.y > H + 200) obstacles.splice(i,1);
-      }
-
-      // score
-      score += 1;
-      hud.textContent = `Score: ${score}`;
+      if(o.y>H+100)obstacles.splice(i,1);
     }
 
-    // main loop
-    let last = performance.now();
-    function loop(ts){
-      const dt = ts - last;
-      last = ts;
-      // clear
-      ctx.clearRect(0,0,W,H);
-      // draw
-      drawBackground();
-      // draw obstacles
-      obstacles.forEach(o=>{
-        const obsX = o.x;
-        if(o.type==='car'){
-          ctx.fillStyle = o.color; ctx.fillRect(obsX, o.y, o.width, o.height);
-          ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.fillText('Car', obsX+6, o.y+14);
-        } else if(o.type==='barrier'){
-          ctx.fillStyle = o.color; ctx.fillRect(obsX, o.y, o.width, o.height);
-        } else if(o.type==='pole'){
-          ctx.fillStyle = o.color; ctx.fillRect(obsX + (o.width/2), o.y, o.width, o.height);
-        } else if(o.type==='wall'){
-          ctx.fillStyle = o.color; ctx.fillRect(obsX, o.y, o.width, o.height);
-        }
-      });
+    // Score
+    score++;
+    hud.textContent=`Score: ${score}`;
+    requestAnimationFrame(update);
+  }
 
-      // player
-      drawPlayer();
-
-      // update game world
-      update(dt);
-
-      if(!gameOver) requestAnimationFrame(loop);
-    }
-
-    // start / restart
-    function startGame(){
-      if(gameStarted) return;
-      gameStarted = true; gameOver = false; score = 0; obstacles=[]; spawnTimer=0;
-      positionPlayer(); createBuildings();
-      document.getElementById('startScreen').classList.add('hidden');
-      hud.style.display = 'block';
-      last = performance.now();
-      requestAnimationFrame(loop);
-    }
-    function restartGame(){
-      gameOver = false; gameStarted = true; score = 0; obstacles=[]; spawnTimer=0;
-      positionPlayer(); createBuildings();
-      document.getElementById('gameOverScreen').classList.add('hidden');
-      last = performance.now();
-      requestAnimationFrame(loop);
-    }
-
-    // attach UI
-    document.getElementById('startBtn').addEventListener('click', startGame);
-    document.getElementById('restartBtn').addEventListener('click', restartGame);
-
-    // init positions (after metrics)
-    positionPlayer();
-    // place player on lane center visually
-    player.x = player.lane * LANE_W + (LANE_W - player.width)/2;
-    player.y = player.baseY;
-
-    // make sure LANE_W recalculated after resize initial
-    function resetAfterShortDelay(){ setupMetrics(); positionPlayer(); createBuildings(); }
-    setTimeout(resetAfterShortDelay,50);
-
-    // expose for debugging if needed
-    window._vr = { startGame, restartGame, player, obstacles };
-
-  })();
+  document.getElementById("startBtn").onclick=startGame;
+  document.getElementById("restartBtn").onclick=restartGame;
   </script>
 </body>
 </html>
