@@ -1,173 +1,114 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Raiku Free Run</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta charset="UTF-8">
+<title>Raiku 3D Runner</title>
 <style>
-html,body{margin:0;overflow:hidden;height:100%;font-family:Arial;}
-canvas{display:block;width:100vw;height:100vh;background:#222;}
-#startScreen,#gameOverScreen{
-  position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  background:rgba(0,0,0,0.75);color:#fff;
-  z-index:10;transition:opacity 0.4s ease;
-}
-#startScreen.hidden,#gameOverScreen.hidden{opacity:0;pointer-events:none;z-index:-1;}
-button{padding:10px 20px;font-size:16px;border:none;border-radius:8px;background:#007bff;color:white;cursor:pointer;margin-top:10px;}
-#hud{position:absolute;top:10px;left:10px;color:#fff;font-size:18px;font-weight:bold;text-shadow:0 1px 2px rgba(0,0,0,0.7);z-index:5;display:none;}
+  body{margin:0;overflow:hidden;}
+  canvas{display:block;}
+  #hud{
+    position:absolute;top:10px;left:10px;color:white;font-size:20px;font-family:Arial;
+    z-index:5;
+  }
 </style>
 </head>
 <body>
-<div id="startScreen">
-  <h1>Tap to Play</h1>
-  <button id="startBtn">Start</button>
-  <p style="font-size:13px;color:#ccc">Swipe left/right to dodge cars</p>
-</div>
-<div id="gameOverScreen" class="hidden">
-  <h1>Game Over</h1>
-  <p>Score: <span id="finalScore">0</span></p>
-  <button id="restartBtn">Restart</button>
-</div>
 <div id="hud">Score: 0</div>
-<canvas id="gameCanvas"></canvas>
-
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
-const canvas=document.getElementById("gameCanvas");
-const ctx=canvas.getContext("2d");
+let scene, camera, renderer;
+let player, road, obstacles=[];
+let laneWidth=4;
+let score=0;
+let gameOver=false;
 
-function resizeCanvas(){
-  const dpr=window.devicePixelRatio||1;
-  canvas.width=window.innerWidth*dpr;
-  canvas.height=window.innerHeight*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+init();
+animate();
+
+function init(){
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x87CEEB);
+
+  camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,1000);
+  camera.position.set(0,8,12);
+  camera.lookAt(0,0,0);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Light
+  const light=new THREE.DirectionalLight(0xffffff,1);
+  light.position.set(0,10,10);
+  scene.add(light);
+
+  // Road
+  const roadGeom=new THREE.BoxGeometry(12,0.1,200);
+  const roadMat=new THREE.MeshPhongMaterial({color:0x333333});
+  road=new THREE.Mesh(roadGeom,roadMat);
+  road.position.z=-90;
+  scene.add(road);
+
+  // Player (Raiku)
+  const playerGeom=new THREE.BoxGeometry(1,2,1);
+  const playerMat=new THREE.MeshPhongMaterial({color:0xff0000});
+  player=new THREE.Mesh(playerGeom,playerMat);
+  player.position.set(0,1,0);
+  scene.add(player);
+
+  // Event for horizontal move
+  window.addEventListener("keydown",(e)=>{
+    if(e.key==="ArrowLeft")player.position.x-=laneWidth;
+    if(e.key==="ArrowRight")player.position.x+=laneWidth;
+    if(player.position.x<-laneWidth)player.position.x=-laneWidth;
+    if(player.position.x>laneWidth)player.position.x=laneWidth;
+  });
+
+  window.addEventListener("resize",()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight)});
 }
-resizeCanvas();
-window.addEventListener("resize",resizeCanvas);
-
-let W=window.innerWidth,H=window.innerHeight;
-let LANE_W=W/3;
-let GROUND_Y=H-80;
-
-let player={
-  width:40,height:60,x:W/2-20,y:GROUND_Y-60, speed:10
-};
-const raiku=new Image();
-raiku.src='https://raw.githubusercontent.com/DrKrishnaM/raiku-image/main/1759800939823.jpg';
-
-let gameStarted=false,gameOver=false,score=0,obstacles=[],spawnTimer=0;
-const baseSpeed=5;
-const hud=document.getElementById("hud");
-
-let touchX=0;
-canvas.addEventListener("touchstart",e=>{
-  touchX=e.touches[0].clientX;
-});
-canvas.addEventListener("touchmove",e=>{
-  if(!gameStarted||gameOver)return;
-  const dx=e.touches[0].clientX-touchX;
-  player.x+=dx;
-  if(player.x<0)player.x=0;
-  if(player.x+player.width>W)player.x=W-player.width;
-  touchX=e.touches[0].clientX;
-  e.preventDefault();
-},{passive:false});
-
-function drawBackground(){
-  ctx.fillStyle="#333";
-  ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle="#fff";
-  ctx.lineWidth=4;
-  for(let i=1;i<3;i++){
-    const x=i*LANE_W;
-    for(let y=-40;y<H;y+=40){
-      ctx.beginPath();
-      ctx.moveTo(x,y+(score%40));
-      ctx.lineTo(x,y+20+(score%40));
-      ctx.stroke();
-    }
-  }
-  ctx.fillStyle="#2e7d32";
-  ctx.fillRect(0,GROUND_Y,W,80);
-}
-
-function drawPlayer(){
-  if(raiku.complete&&raiku.naturalWidth){
-    ctx.drawImage(raiku,player.x,player.y,player.width,player.height);
-  }else{
-    ctx.fillStyle="red";
-    ctx.fillRect(player.x,player.y,player.width,player.height);
-  }
-}
-
-const carImages=[]; 
-const carUrls=[
-'https://upload.wikimedia.org/wikipedia/commons/3/36/Red_sports_car_top_view.png',
-'https://upload.wikimedia.org/wikipedia/commons/8/8b/Blue_car_top_view.png',
-'https://upload.wikimedia.org/wikipedia/commons/5/52/Yellow_car_top_view.png'
-];
-carUrls.forEach(url=>{
-  const img=new Image(); img.src=url; carImages.push(img);
-});
 
 function spawnObstacle(){
-  const lane=Math.floor(Math.random()*3);
-  const img=carImages[Math.floor(Math.random()*carImages.length)];
-  obstacles.push({
-    x:LANE_W*lane+(LANE_W-60)/2,
-    y:-100,width:60,height:100,img,imgSpeed:baseSpeed+score/300
-  });
+  const lanes=[-laneWidth,0,laneWidth];
+  const lane=lanes[Math.floor(Math.random()*3)];
+  const geom=new THREE.BoxGeometry(1.5,2,1.5);
+  const mat=new THREE.MeshPhongMaterial({color:Math.random()*0xffffff});
+  const car=new THREE.Mesh(geom,mat);
+  car.position.set(lane,1,-100);
+  scene.add(car);
+  obstacles.push(car);
 }
 
-function startGame(){
-  gameStarted=true;gameOver=false;score=0;obstacles=[];
-  player.x=W/2-20;
-  document.getElementById("startScreen").classList.add("hidden");
-  document.getElementById("gameOverScreen").classList.add("hidden");
-  hud.style.display="block";
-  update();
-}
+function animate(){
+  if(gameOver)return;
+  requestAnimationFrame(animate);
 
-function restartGame(){
-  gameOver=false;gameStarted=true;score=0;obstacles=[];
-  player.x=W/2-20;
-  document.getElementById("gameOverScreen").classList.add("hidden");
-  hud.style.display="block";
-  update();
-}
+  // Spawn obstacles
+  if(Math.random()<0.02)spawnObstacle();
 
-function update(){
-  if(!gameStarted||gameOver)return;
-  ctx.clearRect(0,0,W,H);
-  drawBackground();
-  drawPlayer();
-
-  spawnTimer++;
-  if(spawnTimer>80){spawnObstacle();spawnTimer=0;}
-
-  for(let i=obstacles.length-1;i>=0;i--){
-    const o=obstacles[i];
-    o.y+=o.imgSpeed;
-    if(o.img.complete)o.img.naturalWidth?ctx.drawImage(o.img,o.x,o.y,o.width,o.height):ctx.fillRect(o.x,o.y,o.width,o.height);
-    else ctx.fillRect(o.x,o.y,o.width,o.height);
-
-    if(player.x<o.x+o.width&&player.x+player.width>o.x&&player.y<o.y+o.height&&player.y+player.height>o.y){
+  // Move obstacles
+  obstacles.forEach((obs,i)=>{
+    obs.position.z+=0.5+score/500;
+    if(obs.position.z>5){scene.remove(obs);obstacles.splice(i,1);}
+    // Collision
+    if(Math.abs(obs.position.z-player.position.z)<1 && Math.abs(obs.position.x-player.position.x)<1){
       gameOver=true;
-      document.getElementById("finalScore").textContent=score;
-      document.getElementById("gameOverScreen").classList.remove("hidden");
-      hud.style.display="none";
-      return;
+      alert("Game Over! Score: "+score);
     }
-    if(o.y>H+150)obstacles.splice(i,1);
-  }
+  });
+
+  // Move road (optional: scrolling effect)
+  road.position.z+=0.5+score/500;
+  if(road.position.z>0)road.position.z=-90;
+
+  // Update camera
+  camera.position.x=player.position.x;
+  camera.lookAt(player.position.x,player.position.y,player.position.z-5);
 
   score++;
-  hud.textContent=`Score: ${score}`;
-  requestAnimationFrame(update);
-}
+  document.getElementById("hud").innerText="Score: "+score;
 
-document.getElementById("startBtn").onclick=startGame;
-document.getElementById("restartBtn").onclick=restartGame;
+  renderer.render(scene,camera);
+}
 </script>
 </body>
 </html>
