@@ -96,6 +96,7 @@
             e.preventDefault();
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
+            if (!gameStarted && !gameOver) startGame(); // Start game on canvas touch too
         });
         canvas.addEventListener('touchend', (e) => {
             if (!gameStarted || gameOver) return;
@@ -110,23 +111,6 @@
                 if (deltaX > 0 && player.lane < 2) player.lane++;
                 else if (deltaX < 0 && player.lane > 0) player.lane--;
                 player.x = LANE_WIDTH * player.lane + (LANE_WIDTH - player.width) / 2;
-            }
-        });
-
-        // Keyboard controls
-        document.addEventListener('keydown', (e) => {
-            if (!gameStarted || gameOver) return;
-            if (e.key === 'ArrowLeft' && player.lane > 0) {
-                player.lane--;
-                player.x = LANE_WIDTH * player.lane + (LANE_WIDTH - player.width) / 2;
-            }
-            if (e.key === 'ArrowRight' && player.lane < 2) {
-                player.lane++;
-                player.x = LANE_WIDTH * player.lane + (LANE_WIDTH - player.width) / 2;
-            }
-            if (e.key === ' ' && !player.jumping) {
-                player.yVelocity = -player.jumpPower;
-                player.jumping = true;
             }
         });
 
